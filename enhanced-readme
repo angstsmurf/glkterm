@@ -1,0 +1,231 @@
+** Enhanced GlkTerm **
+
+This library is an enhanced version of GlkTerm. It is modified rather than
+the official version of GlkTerm, although it is believed to be compatible
+in most cases. This file contains documentation for the new features. In
+addition to new features, there are also some minor bug fixes.
+
+See also the gtoption.h file.
+
+In addition to the stuff mentioned below, there are also some new gestalt
+selectors and dispatch functions implemented. These have numbers in the
+range 0x1400 to 0x14FF.
+
+
+=== Preferences ===
+
+The file ~/.glktermrc contains user preferences. You can also set the
+environment variable named GLKTERMRC to specify a different filename for
+the user preferences file.
+
+Blank lines and lines starting with # are comments.
+
+Defining the value of a preference is done by the name and then a equal
+sign and then the value. For boolean preferences, use "y" for yes and "n"
+for no (without the quotation marks).
+
+Possible preferences include:
+
+* screenwidth: Override the screen width (same as -width).
+
+* screenheight: Override the screen height (same as -height).
+
+* messageline: Boolean; yes to display the message line.
+
+* reverse_textgrids: Boolean; yes to make text grid windows to be reverse
+video, or no to make not reverse video.
+
+* window_borders: Boolean, and defines whether or not window borders are
+displayed. If not set, uses the window border hint instead.
+
+* precise_timing: Same as -precise. This allows timing more precise than
+deciseconds if it is set to yes, but can load the CPU more.
+
+* historylen: Number of history entries (normally 20).
+
+* prompt_defaults: Same as -defprompt. If yes (the default setting), then
+the filename is already filled in if glk_fileref_create_by_prompt() is
+called (the user can still edit it, though).
+
+* style_override: Boolean; yes if you want to customize the styles. This
+is necessarily if you are using the user style preferences. If you do not
+specify this, the default settings are used for all styles.
+
+* border_graphics: Boolean; yes if you want to use line graphics (in
+curses, the ACS_ constants) instead of ASCII for window borders.
+
+* border_style: User style for window borders. See section below about the
+syntax of user styles.
+
+* use_colors: Boolean, and must be yes to enable colours in user styles.
+
+* clear_message: Boolean; if yes, clear the message line when glk_select()
+is called or when ctrl-L is pushed.
+
+* auto_focus: Boolean; if yes, auto focus a suitable window when an event
+is requested or if you push a key that cannot be used in the current
+window but is suitable for another one. This is yes by default.
+
+* more_message: Boolean; if yes, display "--More--" on the message line
+when the text does not all fit on the screen at once, if it has not yet
+reached the end of the text buffer. Only if it is the active window.
+
+* typable_controls: If yes (which is the default setting), then it reports
+most control characters as typable, but if no then it doesn't. This does
+not control which control characters actually are acceptable, though; it
+only controls the report with gestalt_CharInput.
+
+* typable_specials: This is similar to typable_controls, although it
+affects the report of special characters (such as F1, F2, etc) instead.
+Furthermore, gestalt_LineTerminatorKey is affected too.
+
+* temporary_filename: Requires OPT_USE_MKSTEMP. If set, the last six
+characters must be "XXXXXX", and then mkstemp() is used to make temporary
+filenames rather than using tmpnam(). The "XXXXXX" are replaced by
+something new each time it is called.
+
+* readonly: Force all file streams opened from Glk filerefs to be read
+only, except for glk_fileref_create_by_prompt() if fmode is something
+other than filemode_Read. The glkunix_ functions can still open files for
+writing; this preference only affects Glk fileref functions. Also, if this
+is set, temporary files are not available, unless the temporary_filename
+option is also set.
+
+* auto_suffix: If yes (the default), the filename suffix by usage is
+automatically added if glk_fileref_create_by_name() is called. If no, then
+there is no suffix.
+
+* prompt_raw_filename: If yes, glk_fileref_create_by_prompt() does not
+mangle filenames entered by the user; the entered filename is instead used
+directly, as a native filename relative to the current directory. Leading
+and trailing spaces are still trimmed, however. This does not affect
+glk_fileref_create_by_name() or any other function.
+
+* clock_skew: A number of seconds to skew the system clock; can be a
+positive or negative number, or zero. This affects date/time functions.
+(To change the timezone, set the TZ environment variable.)
+
+* restrict_files: If yes, glk_fileref_create_by_name() will fail if the
+name is not specified by a user filename mapping.
+
+* pause_warning: If yes, pause when a warning message is displayed. (A
+warning message is normally displayed if the Glk functions are misused,
+although there are a few other cases too, such as restrict_files.)
+
+* more_exit: If yes, paging is possible when glk_exit() is called.
+
+* savegame: If specified, a native filename for save games. When calling
+glk_fileref_create_by_prompt() with usage fileusage_SavedGame, it will use
+this filename instead of prompting the user.
+
+* transcript: If specified, a native filename for transcript. When calling
+glk_fileref_create_by_prompt() with usage fileusage_Transcript, it will
+use this filename instead of prompting the user.
+
+* allow_prompt: If yes (the default), glk_fileref_create_by_prompt() will
+prompt the user for a filename (unless the "savegame" or "transcript"
+option overrides it for those cases). If no, then it will fail. You can
+use this for play on the internet, so that remote users cannot overwrite
+arbitrary files on your computer.
+
+* script: If set, a native filename; all output to text buffer windows
+will also be appended to this file. Note that this is not the same as the
+"transcript" option, and does not require the game to know about scripts.
+Calling glk_window_clear() on any text buffer window will add a form feed
+character to the script file.
+
+* zcolormode: Normally zero, but can be 0, 1, 2, or 3. If 0, the colour
+extension is disabled. If nonzero you must also set use_colors. If 1, then
+glk_set_color() can only set foreground colours (but not intensity), while
+glk_set_zstyle() can set inverse, bold, and emphasis. If 2, it is similar
+to 1 but you can set intensity but not bold (both use the curses A_BOLD
+style though). If 3, then it is like 2, but glk_set_zstyle() is not
+available, and background colours can also be set (but not blinking). In
+all cases, only text grid windows are affected; these extensions are not
+supported for text buffer windows.
+
+* User styles: The preference name starts with "B" (for text buffer
+windows), "G" (for text grid windows), or "S" (for both kind), and is then
+followed by a number indicating the style to set (0 for style_Normal; see
+glk.h for the style numbers). See section of user styles for the syntax of
+this option. You must also set style_override for this to work.
+
+* User gestalt: The preference name starts with "G" and then the user
+gestalt number, and then equal sign and the value. This is used if gestalt
+selector 0x14FE is used, with the user gestalt number as the parameter.
+
+Another command in the user preference file is a name in square brackets.
+This causes the rest of the file to be ignored, unless the environment
+variable called GLKTERMRC_SECTION is set, in which case if it matches the
+name in the brackets then it reads those settings but if it doesn't
+match then the settings are ignored (settings before any named section are
+still read regardless of this setting).
+
+You can also specify filename mappings. This starts with / and then a Glk
+filename, and then = and the native filename. This is checked when
+glk_fileref_create_by_name() is called; if it is mapped (regardless of the
+specified usage), it will use the specified native filename instead of
+figuring it out by itself. If you double the initial slash then it will
+allow writing to that file even if readonly is set.
+
+
+=== User styles ===
+
+The syntax of a user style is zero or more of the following characters, in
+any order, except that no more than one digit should be specified.
+
+  a   Alternate character set
+  b   Bold or bright
+  d   Dim
+  i   Invisible
+  k   Blinking
+  p   Protected
+  r   Reverse video
+  s   Best highlighting mode of the terminal
+  u   Underlined
+  0   Black on black
+  1   Red on black
+  2   Green on black
+  3   Yellow on black
+  4   Blue on black
+  5   Purple on black
+  6   Cyan on black
+  7   White on black
+
+Which ones are supported depends on the terminal in use; see the curses
+documentation for further details.
+
+Also, if zcolormode is set to 3, the colours are different than above; no
+number means white on black, and the numbers mean:
+
+  0   Black on blue
+  1   Yellow on black
+  2   Purple on black
+  3   Red on black
+  4   Cyan on black
+  5   Green on black
+  6   Blue on black
+  7   Black on black
+
+Note: A different style string will be considered different for the
+purpose of glk_style_distinguish(), whether or not it is distinguishable
+on the terminal in use. Some attributes of user styles can be read by
+glk_style_measure(), although some cannot.
+
+
+=== Command-line arguments ===
+
+There are three new options:
+
+-- means that all further arguments are plain arguments and should not be
+treated as options. This allows filenames starting with a minus sign.
+
+-glkext is followed by a user preference string, and sets it. This
+overrides the corresponding setting in the .glktermrc file.
+
+-= means that the next argument (which should be a filename) will be used
+as the filename of a user preference file with ".pref" added on the end of
+the filename. The argument is still passed normally, despite that. This
+means you might use this to set game specific preferences when you are
+using Glulx, for example.
+

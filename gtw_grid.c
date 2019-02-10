@@ -25,7 +25,7 @@ static void import_input_line(tgline_t *ln, int offset, void *buf,
     int unicode, long len);
 
 /* Array of curses.h attribute values, one for each style. */
-chtype win_textgrid_styleattrs[style_NUMSTYLES];
+chtype win_textgrid_styleattrs[256];
 
 /* This macro sets the appropriate dirty values, when a single character
     (at px, py) is changed. */
@@ -113,7 +113,7 @@ void win_textgrid_rearrange(window_t *win, grect_t *box)
                 tgline_t *ln = &(dwin->lines[jx]);
                 for (ix=0; ix<ln->size; ix++) {
                     ln->chars[ix] = ' ';
-                    ln->attrs[ix] = style_Normal;
+                    ln->attrs[ix] = win->style&0x80?win->style:style_Normal;
                 }
             }
         }
@@ -132,7 +132,7 @@ void win_textgrid_rearrange(window_t *win, grect_t *box)
                 }
                 for (ix=oldval; ix<ln->size; ix++) {
                     ln->chars[ix] = ' ';
-                    ln->attrs[ix] = style_Normal;
+                    ln->attrs[ix] = win->style&0x80?win->style:style_Normal;
                 }
             }
         }
@@ -148,6 +148,7 @@ void win_textgrid_rearrange(window_t *win, grect_t *box)
 static void init_lines(window_textgrid_t *dwin, int beg, int end, int linewid)
 {
     int ix, jx;
+    window_t*win=dwin->owner;
 
     for (jx=beg; jx<end; jx++) {
         tgline_t *ln = &(dwin->lines[jx]);
@@ -162,7 +163,7 @@ static void init_lines(window_textgrid_t *dwin, int beg, int end, int linewid)
         }
         for (ix=0; ix<ln->size; ix++) {
             ln->chars[ix] = ' ';
-            ln->attrs[ix] = style_Normal;
+            ln->attrs[ix] = win->style&0x80?win->style:style_Normal;
         }
     }
 }
@@ -319,7 +320,7 @@ void win_textgrid_clear(window_t *win)
         tgline_t *ln = &(dwin->lines[jx]);
         for (ix=0; ix<dwin->width; ix++) {
             ln->chars[ix] = ' ';
-            ln->attrs[ix] = style_Normal;
+            ln->attrs[ix] = win->style&0x80?win->style:style_Normal;
         }
         ln->dirtybeg = 0;
         ln->dirtyend = dwin->width;

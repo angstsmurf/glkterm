@@ -232,6 +232,12 @@ strid_t glk_stream_open_file(fileref_t *fref, glui32 fmode,
         gli_strict_warning("stream_open_file: invalid fileref ref.");
         return 0;
     }
+
+    /* User preference to force read-only */
+    if(fref->readonly && fmode!=filemode_Read) {
+        gli_strict_warning("stream_openfile: trying to open read-only file for writing.");
+        return 0;
+    }
     
     /* The spec says that Write, ReadWrite, and WriteAppend create the
        file if necessary. However, fopen(filename, "r+") doesn't create
@@ -347,7 +353,7 @@ strid_t glk_stream_open_file_uni(fileref_t *fref, glui32 fmode,
 {
     strid_t str = glk_stream_open_file(fref, fmode, rock);
     /* Unlovely, but it works in this library */
-    str->unicode = TRUE;
+    if(str) str->unicode = TRUE;
     return str;
 }
 
@@ -865,6 +871,39 @@ static void gli_set_style(stream_t *str, glui32 val)
                 gli_set_style(str->win->echostr, val);
             break;
     }
+}
+
+void glk_set_color_stream(stream_t*str, glui32 val) {
+  if(!str || str->type!=strtype_Window) return;
+  if(str->win->echostr) glk_set_color_stream(str->win->echostr,val);
+  if(str->win->type!=wintype_TextGrid || !pref_zcolormode) return;
+  if(pref_zcolormode==3) {
+    str->win->style=(val|0x80)&0xFF;
+  } else {
+    if(str->win->style<0x80) str->win->style=0x87;
+    str->win->style&=(pref_zcolormode&1?0xF8:0xF0);
+    str->win->style|=val&(pref_zcolormode&1?0x07:0x0F);
+  }
+}
+
+void glk_set_color(glui32 val) {
+  glk_set_color_stream(gli_currentstr,val);
+}
+
+void glk_set_zstyle_stream(stream_t*str, glui32 val) {
+  if(!str || str->type!=strtype_Window) return;
+  if(str->win->echostr) glk_set_zstyle_stream(str->win->echostr,val);
+  if(str->win->type!=wintype_TextGrid || !pref_zcolormode) return;
+  if(pref_zcolormode==3) return;
+  if(str->win->style<0x80) str->win->style=0x87;
+  str->win->style&=(pref_zcolormode&1?0x87:0x8F);
+  if(val&1) str->win->style|=32;
+  if((val&2) && (pref_zcolormode&1)) str->win->style|=8;
+  if(val&4) str->win->style|=16;
+}
+
+void glk_set_zstyle(glui32 val) {
+  glk_set_zstyle_stream(gli_currentstr,val);
 }
 
 void gli_stream_echo_line(stream_t *str, char *buf, glui32 len)

@@ -14,7 +14,12 @@
 /* This code should be linked into every Glk library, without change. 
     Get the latest version from the URL above. */
 
+/* (Note: Despite the note above, there are corrections and extensions
+    that have also been included. If you are looking for the official
+    version, this isn't it.) */
+
 #include "glk.h"
+#include "gi_blorb.h"
 #include "gi_dispa.h"
 
 #ifndef NULL
@@ -72,6 +77,7 @@ static gidispatch_intconst_t intconstant_table[] = {
     { "gestalt_DateTime", (20) },
     { "gestalt_DrawImage", (7) },
     { "gestalt_Graphics", (6) },
+    { "gestalt_GraphicsCharInput", (23) },
     { "gestalt_GraphicsTransparency", (14) },
     { "gestalt_HyperlinkInput", (12) },
     { "gestalt_Hyperlinks", (11) },
@@ -321,6 +327,12 @@ static gidispatch_function_t function_table[] = {
     { 0x0049, glk_stream_open_resource, "stream_open_resource" },
     { 0x013A, glk_stream_open_resource_uni, "stream_open_resource_uni" },
 #endif /* GLK_MODULE_RESOURCE_STREAM */
+/* Extensions [14xx] */
+    { 0x1400, giblorb_set_resource_map, "giblorb_set_resource_map" },
+    { 0x1401, glk_set_color, "set_color" },
+    { 0x1402, glk_set_color_stream, "set_color_stream" },
+    { 0x1403, glk_set_zstyle, "set_zstyle" },
+    { 0x1404, glk_set_zstyle_stream, "set_zstyle_stream" },
 };
 
 glui32 gidispatch_count_classes()
@@ -665,6 +677,18 @@ char *gidispatch_prototype(glui32 funcnum)
         case 0x013A: /* stream_open_resource_uni */
             return "3IuIu:Qb";
 #endif /* GLK_MODULE_RESOURCE_STREAM */
+
+/* Extensions [14xx] */
+        case 0x1400: /* giblorb_set_resource_map */
+            return "2Qb:Iu";
+        case 0x1401: /* set_color */
+            return "1Iu:";
+        case 0x1402: /* set_color_stream */
+            return "2QbIu:";
+        case 0x1403: /* set_zstyle */
+            return "1Iu:";
+        case 0x1404: /* set_zstyle_stream */
+            return "2QbIu:";
 
         default:
             return NULL;
@@ -1492,6 +1516,23 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             arglist[3].opaqueref = glk_stream_open_resource_uni(arglist[0].uint, arglist[1].uint);
             break;
 #endif /* GLK_MODULE_RESOURCE_STREAM */
+
+/* Extensions [14xx] */
+        case 0x1400: /* giblorb_set_resource_map */
+            arglist[2].uint = giblorb_set_resource_map(arglist[0].opaqueref);
+            break;
+        case 0x1401: /* set_color */
+            glk_set_color(arglist[0].uint);
+            break;
+        case 0x1402: /* set_color_stream */
+            glk_set_color_stream(arglist[0].opaqueref, arglist[1].uint);
+            break;
+        case 0x1403: /* set_zstyle */
+            glk_set_zstyle(arglist[0].uint);
+            break;
+        case 0x1404: /* set_zstyle_stream */
+            glk_set_zstyle_stream(arglist[0].opaqueref, arglist[1].uint);
+            break;
 
         default:
             /* do nothing */

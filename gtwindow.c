@@ -7,6 +7,7 @@
 #include "gtoption.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef OPT_USE_SIGNALS
 #include <signal.h>
@@ -68,19 +69,38 @@ void gli_initialize_windows()
     spacebuffer[NUMSPACES] = '\0';
     
     /* Create the curses.h attribute values for each style. */
-    for (ix=0; ix<style_NUMSTYLES; ix++) {
-        chtype val = 0;
-        if (ix == style_Emphasized || ix == style_Note)
-            val |= A_UNDERLINE;
-        if (ix == style_Alert)
-            val |= A_REVERSE;
-        if (ix == style_Header || ix == style_Subheader || ix == style_Input)
-            val |= A_BOLD;
-        
-        win_textbuffer_styleattrs[ix] = val;
-        if (pref_reverse_textgrids)
-            val ^= A_REVERSE;
-        win_textgrid_styleattrs[ix] = val;
+    if(pref_style_override) {
+        if(pref_reverse_textgrids) for(ix=0;ix<style_NUMSTYLES;ix++) win_textgrid_styleattrs[ix]^=A_REVERSE;
+    } else {
+        for (ix=0; ix<style_NUMSTYLES; ix++) {
+            chtype val = 0;
+            if (ix == style_Emphasized || ix == style_Note)
+                val |= A_UNDERLINE;
+            if (ix == style_Alert)
+                val |= A_REVERSE;
+            if (ix == style_Header || ix == style_Subheader || ix == style_Input)
+                val |= A_BOLD;
+            
+            win_textbuffer_styleattrs[ix] = val;
+            if (pref_reverse_textgrids)
+                val ^= A_REVERSE;
+            win_textgrid_styleattrs[ix] = val;
+        }
+    }
+    
+    /* If the colours extension is enabled, set them up */
+    if(pref_zcolormode) for(ix=128;ix<256;ix++) {
+      chtype val=0;
+      if(pref_zcolormode==3) {
+        val=COLOR_PAIR((7&~ix)|((ix>>1)&070));
+        if(ix&8) val|=A_BOLD;
+      } else {
+        val=COLOR_PAIR("\10\4\2\6\1\5\3\7"[ix&7]);
+        if(ix&8) val|=A_BOLD;
+        if(ix&16) val|=A_UNDERLINE;
+        if(ix&32) val|=A_REVERSE;
+      }
+      win_textgrid_styleattrs[ix]=val;
     }
     
     /* Figure out the screen size. */
@@ -111,10 +131,29 @@ void gli_initialize_windows()
 void gli_setup_curses()
 {
     initscr();
+    if(pref_use_colors) {
+      start_color();
+      if(pref_zcolormode==3) {
+        int i;
+        static const char co[]={COLOR_BLACK,COLOR_BLUE,COLOR_GREEN,COLOR_CYAN,COLOR_RED,COLOR_MAGENTA,COLOR_YELLOW,COLOR_WHITE};
+        assume_default_colors(COLOR_WHITE,COLOR_BLACK);
+        for(i=0;i<64;i++) init_pair(i,co[7&~i],co[i>>3]);
+      } else {
+        use_default_colors();
+        init_pair(1,COLOR_RED,COLOR_BLACK);
+        init_pair(2,COLOR_GREEN,COLOR_BLACK);
+        init_pair(3,COLOR_YELLOW,COLOR_BLACK);
+        init_pair(4,COLOR_BLUE,COLOR_BLACK);
+        init_pair(5,COLOR_MAGENTA,COLOR_BLACK);
+        init_pair(6,COLOR_CYAN,COLOR_BLACK);
+        init_pair(7,COLOR_WHITE,COLOR_BLACK);
+        init_pair(8,COLOR_BLACK,COLOR_BLACK);
+      }
+    }
     cbreak();
     noecho();
-    nonl(); 
-    intrflush(stdscr, FALSE); 
+    nonl();
+    intrflush(stdscr, FALSE);
     keypad(stdscr, TRUE);
     scrollok(stdscr, FALSE);
 }
@@ -192,6 +231,11 @@ static void compute_content_box()
     
     if (pref_messageline && height > 0)
         content_box.bottom--; /* allow a message line */
+    
+    if(pref_border_graphics && width && height) {
+      border_buf=realloc(border_buf,width*height);
+      if(border_buf) memset(border_buf,0,width*height);
+    }
 }
 
 window_t *gli_new_window(glui32 type, glui32 rock)
@@ -835,6 +879,7 @@ void gli_windows_unechostream(stream_t *str)
 
 void gli_window_rearrange(window_t *win, grect_t *box)
 {
+    win_pair_calc_border(gli_rootwin);
     switch (win->type) {
         case wintype_Blank:
             win_blank_rearrange(win, box);
@@ -1307,6 +1352,7 @@ void gcmd_win_change_focus(window_t *win, glui32 arg)
 
 void gcmd_win_refresh(window_t *win, glui32 arg)
 {
+    if(pref_clear_message) gli_msgline("");
     clear();
     gli_windows_redraw();
     gli_msgline_redraw();

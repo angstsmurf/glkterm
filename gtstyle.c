@@ -102,6 +102,9 @@ glui32 glk_style_measure(window_t *win, glui32 styl, glui32 hint,
         case stylehint_Proportional:
             *result = FALSE;
             return TRUE;
+        case stylehint_ReverseColor:
+            *result = ((styleattrs[styl] & A_REVERSE) != 0);
+            return TRUE;
     }
     
     return FALSE;

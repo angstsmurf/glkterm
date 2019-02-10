@@ -670,6 +670,8 @@ void win_textbuffer_putchar(window_t *win, char ch)
             dwin->dirtyend = lx+1;
         dwin->dirtydelta += 1;
     }
+    
+    if(pref_script) fputc(ch,pref_script);
 }
 
 static void set_last_run(window_textbuffer_t *dwin, glui32 style)
@@ -764,6 +766,8 @@ void win_textbuffer_clear(window_t *win)
     dwin->scrollpos = 0;
     dwin->lastseenline = 0;
     dwin->drawall = TRUE;
+    
+    if(pref_script) fputc('\f',pref_script);
 }
 
 void win_textbuffer_trim_buffer(window_t *win)
@@ -1128,6 +1132,8 @@ void gcmd_buffer_accept_line(window_t *win, glui32 arg)
     len = dwin->numchars - dwin->infence;
     if (inecho && win->echostr)
         gli_stream_echo_line(win->echostr, &(dwin->chars[dwin->infence]), len);
+    if (inecho && pref_script)
+        fwrite(&(dwin->chars[dwin->infence]),1,len,pref_script);
     
     /* Store in history. */
     if (len) {

@@ -5,6 +5,8 @@
     http://eblong.com/zarf/glk/
 */
 
+#define _BSD_SOURCE
+/* (_BSD_SOURCE is needed for strdup()) */
 #include "gtoption.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +15,8 @@
 #include "glk.h"
 #include "glkterm.h"
 #include "glkstart.h"
+#include "gtw_buf.h"
+#include "gtw_grid.h"
 
 /* Declarations of preferences flags. */
 int pref_printversion = FALSE;
@@ -25,6 +29,36 @@ int pref_window_borders = FALSE;
 int pref_precise_timing = FALSE;
 int pref_historylen = 20;
 int pref_prompt_defaults = TRUE;
+/* Extended pref */
+int pref_style_override = FALSE;
+int pref_border_graphics = FALSE;
+unsigned long pref_border_style = 0;
+int pref_use_colors = FALSE;
+int pref_clear_message = FALSE;
+int pref_auto_focus = TRUE;
+int pref_more_message = FALSE;
+int pref_typable_controls = TRUE;
+int pref_typable_specials = TRUE;
+#ifdef OPT_USE_MKSTEMP
+char*pref_temporary_filename = NULL;
+#endif
+int pref_readonly = FALSE;
+int pref_auto_suffix = TRUE;
+int pref_prompt_raw_filename = FALSE;
+signed long pref_clock_skew = 0;
+int pref_restrict_files = FALSE;
+int pref_pause_warning = FALSE;
+int pref_more_exit = FALSE;
+char*pref_savegame = NULL;
+char*pref_transcript = NULL;
+int pref_allow_prompt = TRUE;
+FILE*pref_script = NULL;
+int pref_zcolormode = 0;
+
+Filename_Mapping*filename_mapping=0;
+int num_filename_mapping=0;
+User_Gestalt*user_gestalt=0;
+int num_user_gestalt=0;
 
 /* Some constants for my wacky little command-line option parser. */
 #define ex_Void (0)
@@ -38,10 +72,193 @@ static int extract_value(int argc, char *argv[], char *optname, int type,
     int *argnum, int *result, int defval);
 static int string_to_bool(char *str);
 
+static chtype parse_style(char*buf) {
+  chtype t=0;
+  while(*buf) {
+    switch(*buf++) {
+      case 's': t|=A_STANDOUT; break;
+      case 'u': t|=A_UNDERLINE; break;
+      case 'r': t|=A_REVERSE; break;
+      case 'k': t|=A_BLINK; break;
+      case 'd': t|=A_DIM; break;
+      case 'b': t|=A_BOLD; break;
+      case 'p': t|=A_PROTECT; break;
+      case 'i': t|=A_INVIS; break;
+      case 'a': t|=A_ALTCHARSET; break;
+      case ' ': case '\t': break;
+      case '0': t|=COLOR_PAIR(8); break;
+      case '1': t|=COLOR_PAIR(1); break;
+      case '2': t|=COLOR_PAIR(2); break;
+      case '3': t|=COLOR_PAIR(3); break;
+      case '4': t|=COLOR_PAIR(4); break;
+      case '5': t|=COLOR_PAIR(5); break;
+      case '6': t|=COLOR_PAIR(6); break;
+      case '7': t|=COLOR_PAIR(7); break;
+      default:
+        printf("Invalid style: %c\n",buf[-1]);
+        exit(1);
+    }
+  }
+  return t;
+}
+
+#define USER_OPTION(a,b) if(!strncmp(a"=",buf,sizeof(a))) { buf+=sizeof(a); while(*buf==' ' || *buf=='\t') buf++; b; return; }
+static void user_option(char*buf) {
+  int i,j;
+  chtype t;
+  USER_OPTION("screenwidth",pref_screenwidth=strtol(buf,0,10));
+  USER_OPTION("screenheight",pref_screenheight=strtol(buf,0,10));
+  USER_OPTION("messageline",pref_messageline=string_to_bool(buf));
+  USER_OPTION("reverse_textgrids",pref_reverse_textgrids=string_to_bool(buf));
+  USER_OPTION("window_borders",{
+    pref_override_window_borders=TRUE;
+    pref_window_borders=string_to_bool(buf);
+  });
+#ifdef OPT_TIMED_INPUT
+  USER_OPTION("precise_timing",pref_precise_timing=string_to_bool(buf));
+#endif
+  USER_OPTION("historylen",pref_historylen=strtol(buf,0,10));
+  USER_OPTION("prompt_defaults",pref_prompt_defaults=string_to_bool(buf));
+  USER_OPTION("style_override",pref_style_override=string_to_bool(buf));
+  USER_OPTION("border_graphics",pref_border_graphics=string_to_bool(buf));
+  USER_OPTION("border_style",pref_border_style=parse_style(buf));
+  USER_OPTION("use_colors",pref_use_colors=string_to_bool(buf));
+  USER_OPTION("clear_message",pref_clear_message=string_to_bool(buf));
+  USER_OPTION("auto_focus",pref_auto_focus=string_to_bool(buf));
+  USER_OPTION("more_message",pref_more_message=string_to_bool(buf));
+  USER_OPTION("typable_controls",pref_typable_controls=string_to_bool(buf));
+  USER_OPTION("typable_specials",pref_typable_specials=string_to_bool(buf));
+#ifdef OPT_USE_MKSTEMP
+  USER_OPTION("temporary_filename",{
+    pref_temporary_filename=strdup(buf);
+    if(!pref_temporary_filename) goto memerr;
+    if(strlen(pref_temporary_filename)<6 || strcmp(pref_temporary_filename+strlen(pref_temporary_filename)-6,"XXXXXX")) {
+      printf("Temporary filename must end with \"XXXXXX\"\n");
+      exit(1);
+    }
+  });
+#endif
+  USER_OPTION("readonly",pref_readonly=string_to_bool(buf));
+  USER_OPTION("auto_suffix",pref_auto_suffix=string_to_bool(buf));
+  USER_OPTION("prompt_raw_filename",pref_prompt_raw_filename=string_to_bool(buf));
+  USER_OPTION("clock_skew",pref_clock_skew=strtol(buf,0,10));
+  USER_OPTION("restrict_files",pref_restrict_files=string_to_bool(buf));
+  USER_OPTION("pause_warning",pref_pause_warning=string_to_bool(buf));
+  USER_OPTION("more_exit",pref_more_exit=string_to_bool(buf));
+  USER_OPTION("savegame",{
+    pref_savegame=strdup(buf);
+    if(!pref_savegame) goto memerr;
+  });
+  USER_OPTION("transcript",{
+    pref_transcript=strdup(buf);
+    if(!pref_transcript) goto memerr;
+  });
+  USER_OPTION("allow_prompt",pref_allow_prompt=string_to_bool(buf));
+  USER_OPTION("script",{
+    pref_script=fopen(buf,"a");
+    if(!pref_script) {
+      printf("Unable to open script file: %s\n",buf);
+      exit(1);
+    }
+  });
+  USER_OPTION("zcolormode",pref_zcolormode=strtol(buf,0,10));
+  if(*buf=='S' || *buf=='B' || *buf=='G') {
+    j=*buf;
+    i=strtol(buf+1,&buf,10);
+    if(i>=0 && i<style_NUMSTYLES && *buf=='=') {
+      t=parse_style(buf+1);
+      if(j!='B') win_textgrid_styleattrs[i]=t;
+      if(j!='G') win_textbuffer_styleattrs[i]=t;
+      return;
+    }
+  }
+  if(*buf=='U') {
+    i=strtol(buf+1,&buf,0);
+    if(*buf=='=') {
+      for(j=0;j<num_user_gestalt;j++) {
+        if(user_gestalt[j].id==j) {
+          user_gestalt[j].val=strtol(buf+1,0,0);
+          return;
+        }
+      }
+      j=num_user_gestalt++;
+      user_gestalt=realloc(user_gestalt,num_user_gestalt*sizeof(User_Gestalt));
+      if(!user_gestalt) goto memerr;
+      user_gestalt[j].id=i;
+      user_gestalt[j].val=strtol(buf+1,0,0);
+      return;
+    }
+  }
+  if(*buf=='/') {
+    /* Filename mapping */
+    Filename_Mapping*fm;
+    char*p;
+    filename_mapping=realloc(filename_mapping,(num_filename_mapping+1)*sizeof(Filename_Mapping));
+    if(!filename_mapping) goto memerr;
+    fm=filename_mapping+num_filename_mapping++;
+    fm->writable=(buf[1]=='/'?1:0);
+    fm->glkname=p=strdup(buf+fm->writable+1);
+    if(!p) goto memerr;
+    while(*p) {
+      if(*p=='=') break;
+      p++;
+    }
+    if(!*p) {
+      printf("Invalid filename mapping\n");
+      exit(1);
+    }
+    *p++=0;
+    fm->native=p;
+    return;
+  }
+  printf("Invalid user option: %s\n",buf);
+  exit(1);
+  memerr:
+  printf("Memory allocation failed\n");
+  exit(1);
+}
+
+static void read_glktermrc(char*sec,char*filename) {
+  char*home;
+  FILE*fp;
+  char buf[1024];
+  char*p;
+  int sk=0;
+  if(filename) {
+    fp=fopen(filename,"r");
+  } else {
+    home=getenv("HOME");
+    if(!home) home=".";
+    filename=malloc(strlen(home)+12);
+    if(!filename) return;
+    sprintf(filename,"%s/.glktermrc",home);
+    fp=fopen(filename,"r");
+    free(filename);
+  }
+  if(!fp) return;
+  while(fgets(buf,1024,fp)) {
+    p=buf+strlen(buf);
+    while(p>buf && (p[-1]=='\r' || p[-1]=='\t' || p[-1]=='\n' || p[-1]==' ')) *--p=0;
+    p=buf;
+    while(*p==' ' || *p=='\t') p++;
+    if(*p=='[' && p[strlen(p)-1]==']') {
+      home=getenv("GLKTERMRC_SECTION")?:sec;
+      sk=home?strncmp(home,p+1,strlen(p)-2):1;
+    }
+    if(sk) continue;
+    if(*p && *p!='#' && *p!='[' && *p!='!') user_option(buf);
+    if(*p=='!') read_glktermrc(sec,buf+1);
+  }
+  fclose(fp);
+}
+
+extern int gli_user_gestalt_compar(const void*a,const void*b);
+
 int main(int argc, char *argv[])
 {
     int ix, jx, val;
     glkunix_startup_t startdata;
+    int endflags=0;
     
     /* Test for compile-time errors. If one of these spouts off, you
         must edit glk.h and recompile. */
@@ -53,6 +270,9 @@ int main(int argc, char *argv[])
         printf("Compile-time error: glui32 is not unsigned. Please fix glk.h.\n");
         return 1;
     }
+    
+    /* Read .glktermrc if it exists. */
+    read_glktermrc(argv[0],getenv("GLKTERMRC"));
     
     /* Now some argument-parsing. This is probably going to hurt. */
     startdata.argc = 0;
@@ -66,6 +286,14 @@ int main(int argc, char *argv[])
         glkunix_argumentlist_t *argform;
         int inarglist = FALSE;
         char *cx;
+        
+        if(endflags) {
+          startdata.argv[startdata.argc++]=argv[ix];
+          continue;
+        } else if(argv[ix][0]=='-' && argv[ix][1]=='-' && !argv[ix][2]) {
+          endflags=1;
+          continue;
+        }
         
         for (argform = glkunix_arguments; 
             argform->argtype != glkunix_arg_End && !errflag; 
@@ -177,6 +405,14 @@ int main(int argc, char *argv[])
         else if (extract_value(argc, argv, "precise", ex_Bool, &ix, &val, pref_precise_timing))
             pref_precise_timing = val;
 #endif /* !OPT_TIMED_INPUT */
+        else if (!strcmp(argv[ix],"-glkext") && ix<argc-1)
+            user_option(argv[++ix]);
+        else if (!strcmp(argv[ix],"-=") && ix<argc-1) {
+            char*xx=malloc(strlen(argv[ix+1])+8);
+            sprintf(xx,"%s.pref",argv[ix+1]);
+            read_glktermrc(argv[0],xx);
+            free(xx);
+        }
         else {
             printf("%s: unknown option: %s\n", argv[0], argv[ix]);
             errflag = TRUE;
@@ -221,7 +457,7 @@ int main(int argc, char *argv[])
     }
     
     if (pref_printversion) {
-        printf("GlkTerm, library version %s (%s).\n", 
+        printf("GlkTerm, library version %s (%s).\n",
             LIBRARY_VERSION, LIBRARY_PORT);
         printf("For more information, see http://eblong.com/zarf/glk/\n");
         return 1;
@@ -230,6 +466,9 @@ int main(int argc, char *argv[])
     /* We now start up curses. From now on, the program must exit through
         glk_exit(), so that endwin() is called. */
     gli_setup_curses();
+    
+    /* Sort user_gestalt if necessary. */
+    if(num_user_gestalt>1) qsort(user_gestalt,num_user_gestalt,sizeof(User_Gestalt),gli_user_gestalt_compar);
     
     /* Initialize things. */
     gli_initialize_misc();

@@ -10,6 +10,19 @@
 #include <string.h>
 #include "glk.h"
 #include "glkterm.h"
+#include "gi_dispa.h"
+
+int gli_user_gestalt_compar(const void*a,const void*b) {
+  const User_Gestalt*x=a;
+  const User_Gestalt*y=b;
+  return x->id>y->id?1:-1;
+}
+
+static glui32 find_user_gestalt(glui32 id) {
+  User_Gestalt key={id,0};
+  User_Gestalt*g=bsearch(&key,user_gestalt,num_user_gestalt,sizeof(User_Gestalt),gli_user_gestalt_compar);
+  return g?g->val:0;
+}
 
 glui32 glk_gestalt(glui32 id, glui32 val)
 {
@@ -18,8 +31,10 @@ glui32 glk_gestalt(glui32 id, glui32 val)
 
 glui32 glk_gestalt_ext(glui32 id, glui32 val, glui32 *arr, glui32 arrlen)
 {
+    static int impl;
     int ix;
     
+    impl=TRUE;
     switch (id) {
         
         case gestalt_Version:
@@ -49,7 +64,7 @@ glui32 glk_gestalt_ext(glui32 id, glui32 val, glui32 *arr, glui32 arrlen)
                     || val == keycode_Up || val == keycode_Down
                     || val == keycode_Return || val == keycode_Delete
                     || val == keycode_Escape)
-                    return TRUE;
+                    return (val == keycode_Return || pref_typable_specials);
                 else
                     return FALSE;
             }
@@ -118,10 +133,11 @@ glui32 glk_gestalt_ext(glui32 id, glui32 val, glui32 *arr, glui32 arrlen)
             return TRUE;
 
         case gestalt_LineTerminators:
-            return TRUE;
+            return pref_typable_specials;
         case gestalt_LineTerminatorKey:
             /* GlkTerm never uses the escape or function keys for anything,
                so we'll allow them to be line terminators. */
+            if (!pref_typable_specials) return FALSE;
             if (val == keycode_Escape)
                 return TRUE;
             if (val >= keycode_Func12 && val <= keycode_Func1)
@@ -134,7 +150,35 @@ glui32 glk_gestalt_ext(glui32 id, glui32 val, glui32 *arr, glui32 arrlen)
         case gestalt_ResourceStream:
             return TRUE;
 
+        case 0x1400: /* gestalt_Gestalt */
+            glk_gestalt_ext(val,0,NULL,0);
+            return impl;
+
+        case 0x1401: /* gestalt_Function */
+            return gidispatch_get_function_by_id(val)?1:0;
+
+        case 0x1402: /* gestalt_WindowCursor */
+            return (val==wintype_TextBuffer || val==wintype_TextGrid);
+
+        case 0x1403: /* gestalt_Color */
+            return "\x00\x10\x30\x70"[pref_zcolormode&3];
+
+        case 0x1404: /* gestalt_Zstyle */
+            if(pref_zcolormode!=1 && pref_zcolormode!=2) return 0;
+            if(val&~15) return 0;
+            if(pref_zcolormode==2 && (val&2)) return 0;
+            return 2;
+
+        case 0x1407: /* gestalt_CharInputExt */
+            if(val=='\031' || val=='\026') return char_typable_table[val]?0x22:0;
+            else return char_typable_table[val]?0x33:0;
+
+        case 0x14FE: /* gestalt_UserOption */
+            if(!user_gestalt) return 0;
+            return find_user_gestalt(val);
+
         default:
+            impl=FALSE;
             return 0;
 
     }
